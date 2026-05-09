@@ -3,3 +3,6 @@ jupyter
 transformers
 sentence-transformers
 torch
+rank_bm25
+scikit-learn
+nltk
