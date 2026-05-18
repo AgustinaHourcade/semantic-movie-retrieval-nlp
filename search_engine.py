@@ -3,20 +3,27 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 import nltk
 from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 
-# Download punkt tokenizer data if not present
+# Download nltk data if not present
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt', quiet=True)
+    
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords', quiet=True)
 
 class BM25Searcher:
     def __init__(self, df, text_column='content_narrative'):
         self.df = df
         self.text_column = text_column
         self.corpus = self.df[self.text_column].fillna('').tolist()
+        self.stop_words = set(stopwords.words('english'))
         
         # Tokenize the corpus
         print("Tokenizing corpus for BM25...")
@@ -25,7 +32,8 @@ class BM25Searcher:
         print("BM25 Index built successfully.")
 
     def _tokenize(self, text):
-        return word_tokenize(text.lower())
+        tokens = word_tokenize(text.lower())
+        return [t for t in tokens if t.isalnum() and t not in self.stop_words]
 
     def search(self, query, top_k=5, use_exact_match=False):
         exact_titles = set()
