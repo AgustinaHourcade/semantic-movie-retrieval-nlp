@@ -7,3 +7,5 @@ rank_bm25
 scikit-learn
 nltk
 faiss-cpu
+streamlit
+python-dotenv

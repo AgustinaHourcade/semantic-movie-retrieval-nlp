@@ -38,3 +38,10 @@ El proyecto está diseñado de forma modular para separar el procesamiento de da
 
 5. **Evaluar Resultados:**
    Abre y ejecuta `03_evaluation.ipynb`. El notebook calculará automáticamente las métricas NDCG, MRR y Precisión, mostrando una tabla comparativa final con el rendimiento de BM25, Dense Search y Hybrid Search.
+
+6. **Lanzar la Interfaz Web (Demo Interactiva):**
+   Ejecuta la aplicación de Streamlit para probar el motor de búsqueda de forma interactiva desde el navegador:
+   ```bash
+   streamlit run app.py
+   ```
+   La interfaz permite seleccionar el algoritmo (BM25, Dense, Híbrido), ajustar la cantidad de resultados y realizar consultas cross-lingual (español → inglés) en tiempo real.
