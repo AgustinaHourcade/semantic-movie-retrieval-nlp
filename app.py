@@ -539,9 +539,9 @@ header[data-testid="stHeader"] {
 @st.cache_resource(show_spinner="Cargando dataset y construyendo índices…")
 def load_searchers():
     """Load the dataset and instantiate all three searchers once."""
-    from search_engine import BM25Searcher, DenseSearcher, HybridSearcher
+    from src.search_engine import BM25Searcher, DenseSearcher, HybridSearcher
 
-    data_path = os.path.join(os.path.dirname(__file__), "movies_with_embeddings.pkl")
+    data_path = os.path.join(os.path.dirname(__file__), "data", "movies_with_embeddings.pkl")
     df = pd.read_pickle(data_path)
 
     bm25 = BM25Searcher(df)

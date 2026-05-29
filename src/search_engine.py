@@ -15,11 +15,15 @@ try:
 except LookupError:
     nltk.download('stopwords', quiet=True)
 
+# Path resolution
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+
 class BM25Searcher:
-    def __init__(self, df, text_column='content_narrative', index_path='bm25_index.pkl'):
+    def __init__(self, df, text_column='content_narrative', index_path=None):
         self.df = df
         self.text_column = text_column
-        self.index_path = index_path
+        self.index_path = index_path if index_path is not None else os.path.join(DATA_DIR, 'bm25_index.pkl')
         self.stop_words = set(stopwords.words('english'))
         self.tokenizer = RegexpTokenizer(r'\w+')
         
@@ -62,11 +66,11 @@ class BM25Searcher:
 
 
 class DenseSearcher:
-    def __init__(self, df, model_name='paraphrase-multilingual-MiniLM-L12-v2', embedding_col='embedding', index_path='faiss_index.bin', map_path='faiss_id_map.pkl'):
+    def __init__(self, df, model_name='paraphrase-multilingual-MiniLM-L12-v2', embedding_col='embedding', index_path=None, map_path=None):
         self.df = df
         self.embedding_col = embedding_col
-        self.index_path = index_path
-        self.map_path = map_path
+        self.index_path = index_path if index_path is not None else os.path.join(DATA_DIR, 'faiss_index.bin')
+        self.map_path = map_path if map_path is not None else os.path.join(DATA_DIR, 'faiss_id_map.pkl')
         
         print(f"Loading SentenceTransformer model ({model_name})...")
         self.model = SentenceTransformer(model_name)
