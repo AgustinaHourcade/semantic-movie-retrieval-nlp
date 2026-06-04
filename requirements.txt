@@ -9,3 +9,5 @@ nltk
 faiss-cpu
 streamlit
 python-dotenv
+sacremoses
+langdetect

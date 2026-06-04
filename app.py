@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from langdetect import detect, LangDetectException
 
 # Page Config 
 st.set_page_config(
@@ -551,6 +552,33 @@ def load_searchers():
     return df, bm25, dense, hybrid
 
 
+# Load Translator (cached)
+@st.cache_resource(show_spinner="Cargando modelo de traducción ES→EN…")
+def load_translator():
+    """Load Helsinki-NLP/opus-mt-es-en for Cross-Lingual Query Translation."""
+    from transformers import pipeline
+    return pipeline("translation", model="Helsinki-NLP/opus-mt-es-en")
+
+
+def translate_query(query: str) -> tuple[str, bool]:
+    """Detect query language; translate to English if Spanish.
+
+    Returns
+    -------
+    (final_query, was_translated) : tuple[str, bool]
+    """
+    try:
+        lang = detect(query)
+    except LangDetectException:
+        return query, False
+
+    if lang == "es":
+        translator = load_translator()
+        result = translator(query, max_length=512)
+        return result[0]["translation_text"], True
+    return query, False
+
+
 df, bm25_searcher, dense_searcher, hybrid_searcher = load_searchers()
 
 # Sidebar 
@@ -649,6 +677,28 @@ query = st.text_input(
     label_visibility="collapsed",
 )
 
+# --- Query Translation (CLIR) ---
+query_final = query
+was_translated = False
+if query and len(query.strip()) > 2:
+    query_final, was_translated = translate_query(query.strip())
+    if was_translated:
+        st.markdown(
+            f'<div style="'
+            f'display:flex;align-items:center;gap:8px;'
+            f'padding:8px 16px;margin-bottom:12px;'
+            f'background:rgba(33,112,228,0.08);'
+            f'border:1px solid rgba(33,112,228,0.25);'
+            f'border-radius:2px;'
+            f'font-family:var(--font-inter);font-size:14px;'
+            f'color:var(--color-secondary);'
+            f'">'
+            f'<span class="material-symbols-outlined" style="font-size:18px;">translate</span>'
+            f'Traducción automática: Buscando <strong style="margin-left:4px;">"{query_final}"</strong>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
 # Helpers 
 
 PLATFORM_CONFIG = {
@@ -737,12 +787,12 @@ def render_card(row: pd.Series, rank: int, score: float, method: str) -> str:
 
 if query:
     if algorithm.startswith("BM25"):
-        results = bm25_searcher.search(query, top_k=top_k)
+        results = bm25_searcher.search(query_final, top_k=top_k)
     elif algorithm.startswith("Dense"):
-        results = dense_searcher.search(query, top_k=top_k)
+        results = dense_searcher.search(query_final, top_k=top_k)
     else:
         results = hybrid_searcher.search(
-            query,
+            query_final,
             top_k=top_k,
             method='alpha' if fusion_method == 'Alpha (Min-Max)' else 'rrf',
             alpha=alpha,
