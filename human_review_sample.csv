@@ -1,9 +1,9 @@
 query,movie_title,relevance,human_relevance
-Action movies starring Akshay Kumar,Ekkadiki Pothavu Chinnavada,5.0,
-Documentary showing the history of jazz music and its cultural impact,Standing in the Shadows of Motown,3.0,
-Athletes overcoming severe physical injuries to win a championship,The Rebound,5.0,
-Science fiction movies directed by Steven Spielberg,War Horse,3.0,
-Documentaries featuring Elon Musk,UFC Sound Waves,1.0,
+Action movies starring Akshay Kumar,Ekkadiki Pothavu Chinnavada,5.0,0
+Documentary showing the history of jazz music and its cultural impact,Standing in the Shadows of Motown,3.0, 1.0
+Athletes overcoming severe physical injuries to win a championship,The Rebound,5.0,5
+Science fiction movies directed by Steven Spielberg,War Horse,3.0,1
+Documentaries featuring Elon Musk,UFC Sound Waves,1.0,0
 Comedy movies starring Anupam Kher,Changeland,1.0,
 Romantic relationship between people from completely different social classes,Mirzya,,
 Films starring Maggie Binkley,Backtrack,0.0,
@@ -18,11 +18,11 @@ A classic revenge story where a protagonist hunts down former betrayers,I Spit o
 A struggle against an oppressive dystopian government in a near future,Zombie Strippers,2.0,
 Comedy movies starring Bruce Willis,The Bid,1.0,
 Films starring Shah Rukh Khan,ESPN Films Presents,0.0,
-Documentary showing the history of jazz music and its cultural impact,Cocktail Hour Cities Edition II,1.0,
-Documentaries featuring Elon Musk,The Hurt Business,1.0,
+Documentary showing the history of jazz music and its cultural impact,Cocktail Hour Cities Edition II,1.0,1
+Documentaries featuring Elon Musk,The Hurt Business,1.0,0
 Films directed by John Lasseter,Knick Knack Theatrical Short,1.0,
 Films starring Samuel L. Jackson,CONFLICTED,0.0,
-Documentaries featuring Elon Musk,MLK/FBI,1.0,
+Documentaries featuring Elon Musk,MLK/FBI,1.0,0
 Films starring Samuel L. Jackson,The Fighting Kentuckian,0.0,
 Movies starring Akshay Kumar,Ekkadiki Pothavu Chinnavada,0.0,
 A house haunted by malevolent spirits that terrorize a family,House on Haunted Hill (in Color),3.0,
@@ -33,12 +33,12 @@ A journey through outer space to find a new habitable planet for humanity,Last C
 A detective dealing with his own inner demons while chasing a serial killer,The Killer,0.0,
 Musical comedy directed by Paul Hoen,Luck of the Irish,,
 A detective dealing with his own inner demons while chasing a serial killer,Die Ontwaking,3.0,
-Athletes overcoming severe physical injuries to win a championship,Miracle Kid,1.0,
+Athletes overcoming severe physical injuries to win a championship,Miracle Kid,1.0,1
 A journey through outer space to find a new habitable planet for humanity,Pinkfong & Baby Shark's Space Adventure,1.0,
 Movies starring Paresh Rawal,Angulika,,
 Horror movies starring Danny Trejo,Trilogy of Terror,1.0,
-Science fiction movies directed by Steven Spielberg,Prometheus,2.0,
-Athletes overcoming severe physical injuries to win a championship,The Perfect Day,2.0,
+Science fiction movies directed by Steven Spielberg,Prometheus,2.0,1
+Athletes overcoming severe physical injuries to win a championship,The Perfect Day,2.0,1
 Time travel causing complex paradoxes and altering historical events,About Time,3.0,
 Action movies starring Samuel L. Jackson,The Last Full Measure,0.0,
 Films starring Nicolas Cage,Inconceivable,5.0,
