@@ -563,9 +563,9 @@ with st.sidebar:
 
     algorithm = st.radio(
         "Algoritmo de búsqueda",
-        options=["Híbrido (RRF)", "BM25 (Sparse)", "Dense (Semántico)"],
+        options=["Híbrido", "BM25 (Sparse)", "Dense (Semántico)"],
         index=0,
-        help="Híbrido combina BM25 + Dense usando Reciprocal Rank Fusion.",
+        help="Híbrido combina BM25 + Dense con fusión Alpha (Min-Max) o RRF.",
         label_visibility="collapsed",
     )
 
@@ -582,10 +582,38 @@ with st.sidebar:
     )
 
     use_exact_match = st.checkbox(
-        "Coincidencia exacta de título",
+        "Coincidencia exacta",
         value=True,
-        help="Solo aplica al modo Híbrido. Prioriza películas cuyo título contenga la consulta.",
+        help="Solo aplica al modo Híbrido. Prioriza películas cuyo título, cast o director contenga la consulta.",
     )
+
+    fusion_method = st.radio(
+        "Método de fusión",
+        options=["Alpha (Min-Max)", "RRF"],
+        index=0,
+        help="Alpha interpola scores normalizados. RRF usa Reciprocal Rank Fusion.",
+    )
+
+    if fusion_method == "Alpha (Min-Max)":
+        alpha = st.slider(
+            "Alpha (Dense vs BM25)",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.5,
+            step=0.05,
+            help="0.0 = puro BM25, 1.0 = puro Dense.",
+        )
+        rrf_k = 60  # unused but set a default
+    else:
+        rrf_k = st.slider(
+            "RRF k",
+            min_value=1,
+            max_value=100,
+            value=60,
+            step=1,
+            help="Constante de suavizado para Reciprocal Rank Fusion.",
+        )
+        alpha = 0.5  # unused but set a default
 
     st.markdown("---")
 
@@ -594,13 +622,13 @@ with st.sidebar:
         f'<div class="sidebar-meta-row"><span class="sidebar-meta-label">Películas cargadas</span>'
         f'<span class="sidebar-meta-value">{len(df):,}</span></div>'
         f'<div style="margin-top:8px;"><span class="sidebar-meta-label">Modelo Activo</span><br/>'
-        f'<span class="sidebar-meta-value-sm">paraphrase-multilingual-MiniLM-L12-v2</span></div>',
+        f'<span class="sidebar-meta-value-sm">multi-qa-MiniLM-L6-cos-v1</span></div>',
         unsafe_allow_html=True,
     )
 
 # Top NavBar 
 algo_map = {
-    "Híbrido (RRF)": "Hybrid RRF",
+    "Híbrido": "Hybrid",
     "BM25 (Sparse)": "BM25 Sparse",
     "Dense (Semántico)": "Dense Semantic",
 }
@@ -664,10 +692,10 @@ def render_card(row: pd.Series, rank: int, score: float, method: str) -> str:
     # Score badge
     if method == "hybrid" and score == 999.0:
         score_html = '<div class="score-badge top-score"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">verified</span>EXACT MATCH</div>'
-        exact_html = '<span class="exact-match"><span class="material-symbols-outlined" style="font-size: 12px; margin-right: 4px; vertical-align: middle;">track_changes</span>TÍTULO EXACTO</span>'
+        exact_html = '<span class="exact-match"><span class="material-symbols-outlined" style="font-size: 12px; margin-right: 4px; vertical-align: middle;">track_changes</span>COINCIDENCIA EXACTA</span>'
     else:
         score_fmt = f"{score:.4f}" if score < 10 else f"{score:.2f}"
-        label_name = "RRF" if method == "hybrid" else ("BM25" if method == "bm25" else "SIM")
+        label_name = "SCORE" if method == "hybrid" else ("BM25" if method == "bm25" else "SIM")
         badge_class = "top-score" if rank == 1 else "normal-score"
         score_html = f'<div class="score-badge {badge_class}"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">analytics</span>{label_name}: {score_fmt}</div>'
         exact_html = ""
@@ -714,7 +742,12 @@ if query:
         results = dense_searcher.search(query, top_k=top_k)
     else:
         results = hybrid_searcher.search(
-            query, top_k=top_k, use_exact_match=use_exact_match
+            query,
+            top_k=top_k,
+            method='alpha' if fusion_method == 'Alpha (Min-Max)' else 'rrf',
+            alpha=alpha,
+            rrf_k=rrf_k,
+            use_exact_match=use_exact_match,
         )
 
     st.markdown(

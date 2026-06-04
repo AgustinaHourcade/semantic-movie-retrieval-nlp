@@ -1,0 +1,5 @@
+/scratch
+*.pkl
+faiss_index.bin
+prompt_for_ai.txt
+*.pyc

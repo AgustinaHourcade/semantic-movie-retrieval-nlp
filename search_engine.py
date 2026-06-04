@@ -62,7 +62,7 @@ class BM25Searcher:
 
 
 class DenseSearcher:
-    def __init__(self, df, model_name='paraphrase-multilingual-MiniLM-L12-v2', embedding_col='embedding', index_path='faiss_index.bin', map_path='faiss_id_map.pkl'):
+    def __init__(self, df, model_name='multi-qa-MiniLM-L6-cos-v1', embedding_col='embedding', index_path='faiss_index.bin', map_path='faiss_id_map.pkl'):
         self.df = df
         self.embedding_col = embedding_col
         self.index_path = index_path
@@ -123,89 +123,258 @@ class DenseSearcher:
         return results
 
 
+# ---------------------------------------------------------------------------
+# Hybrid Searcher — combines BM25 (lexical) and Dense (semantic) retrieval
+# with multi-field exact-match boosting and configurable fusion strategy.
+# ---------------------------------------------------------------------------
+
 class HybridSearcher:
-    def __init__(self, bm25_searcher, dense_searcher):
+    """Hybrid search that fuses BM25 and Dense scores.
+
+    Fusion strategies:
+        * ``'alpha'`` (default) – Min-Max normalises raw scores from both
+          retrievers to [0, 1] and interpolates them:
+              ``score = alpha * dense + (1 - alpha) * bm25``
+        * ``'rrf'`` – Reciprocal Rank Fusion with a configurable *k* constant.
+
+    Exact-match boosting:
+        When ``use_exact_match=True``, rows whose **title**, **cast** or
+        **director** fields contain the query string (case-insensitive) are
+        promoted to the very top of the results list.
+    """
+
+    # Fields checked for exact-match boosting (order = priority).
+    _EXACT_MATCH_FIELDS = ['title', 'cast', 'director']
+
+    def __init__(self, bm25_searcher: BM25Searcher, dense_searcher: DenseSearcher):
         self.bm25_searcher = bm25_searcher
         self.dense_searcher = dense_searcher
         self.df = self.bm25_searcher.df
-        # Pre-lowercase titles to make exact match substring checks extremely fast
-        self.titles_lower = self.df['title'].str.lower().tolist()
 
-    def search(self, query, top_k=5, rrf_k=60, use_exact_match=True):
-        exact_titles = set()
-        exact_indices = []
-        results = []
-        
+        # Pre-compute lowercased versions of boost fields for O(n) substring
+        # matching at search time (avoids re-lowering on every call).
+        self._fields_lower: dict[str, list[str]] = {}
+        for field in self._EXACT_MATCH_FIELDS:
+            if field in self.df.columns:
+                self._fields_lower[field] = (
+                    self.df[field].fillna('').str.lower().tolist()
+                )
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        method: str = 'alpha',
+        alpha: float = 0.1,
+        rrf_k: int = 60,
+        use_exact_match: bool = True,
+    ) -> list[dict]:
+        """Run a hybrid search and return the top-k results.
+
+        Parameters
+        ----------
+        query : str
+            Natural-language search query.
+        top_k : int
+            Number of results to return.
+        method : ``'alpha'`` | ``'rrf'``
+            Fusion strategy.
+        alpha : float
+            Interpolation weight for the dense retriever (only used when
+            ``method='alpha'``). ``0.0`` = pure BM25, ``1.0`` = pure Dense.
+        rrf_k : int
+            Smoothing constant for RRF (only used when ``method='rrf'``).
+        use_exact_match : bool
+            Whether to boost exact substring matches in title / cast /
+            director to the top of results.
+
+        Returns
+        -------
+        list[dict]
+            Each dict contains ``title``, ``score``, ``rank``, ``method``.
+        """
+        # ----- 1. Exact-match boost (multi-field) -------------------------
+        boosted_indices: list[int] = []
         if use_exact_match:
-            query_lower = query.lower()
-            # Fast substring match on titles_lower list
-            exact_indices = [i for i, t in enumerate(self.titles_lower) if query_lower in t]
-            
-            for idx in exact_indices:
-                title = self.df.iloc[idx]['title']
-                exact_titles.add(title)
-                results.append({
-                    'title': title,
-                    'score': 999.0,
-                    'rank': len(results) + 1,
-                    'method': 'hybrid'
-                })
-                if len(results) >= top_k:
-                    return results
+            boosted_indices = self._find_exact_matches(query)
 
-        # For hybrid search, we retrieve more items initially to combine them
-        initial_k = max(top_k * 2, 50)
-        
-        # 1. Run BM25 search
+        # Collect boosted results (already ranked by field priority).
+        results: list[dict] = []
+        boosted_set = set(boosted_indices)
+        for idx in boosted_indices:
+            results.append(self._make_result(idx, score=999.0, results_so_far=results))
+            if len(results) >= top_k:
+                return results
+
+        # ----- 2. Retrieve raw scores from both retrievers ----------------
+        remaining_k = top_k - len(results)
+        initial_k = max(remaining_k * 3, 50)
+
+        bm25_scores_all = self._raw_bm25_scores(query)
+        dense_scores_map, dense_faiss_indices = self._raw_dense_scores(query, initial_k)
+
+        # ----- 3. Fuse scores according to the chosen strategy ------------
+        if method == 'rrf':
+            fused = self._fuse_rrf(
+                bm25_scores_all, dense_faiss_indices,
+                boosted_set, initial_k, rrf_k,
+            )
+        elif method == 'alpha':
+            fused = self._fuse_alpha(
+                bm25_scores_all, dense_scores_map,
+                boosted_set, initial_k, alpha,
+            )
+        else:
+            raise ValueError(f"Unknown fusion method '{method}'. Use 'alpha' or 'rrf'.")
+
+        # ----- 4. Sort and assemble final results -------------------------
+        sorted_fused = sorted(fused.items(), key=lambda item: item[1], reverse=True)
+        for idx, score in sorted_fused:
+            results.append(self._make_result(idx, score=score, results_so_far=results))
+            if len(results) >= top_k:
+                break
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Exact-match helpers
+    # ------------------------------------------------------------------
+
+    def _find_exact_matches(self, query: str) -> list[int]:
+        """Return row indices whose title/cast/director contain *query*.
+
+        Results are deduplicated and ordered by field priority (title first,
+        then cast, then director) so that a title hit always ranks above a
+        cast-only hit.
+        """
+        query_lower = query.lower()
+        seen: set[int] = set()
+        ordered: list[int] = []
+
+        for field, values in self._fields_lower.items():
+            for i, val in enumerate(values):
+                if i not in seen and query_lower in val:
+                    seen.add(i)
+                    ordered.append(i)
+        return ordered
+
+    # ------------------------------------------------------------------
+    # Raw-score retrieval (thin wrappers around BM25 / FAISS internals)
+    # ------------------------------------------------------------------
+
+    def _raw_bm25_scores(self, query: str) -> np.ndarray:
+        """Return the full BM25 score array across the corpus."""
         tokenized_query = self.bm25_searcher._tokenize(query)
-        bm25_scores = self.bm25_searcher.bm25.get_scores(tokenized_query)
-        bm25_top_indices = np.argsort(bm25_scores)[::-1][:initial_k]
-        
-        # 2. Run FAISS search
+        return self.bm25_searcher.bm25.get_scores(tokenized_query)
+
+    def _raw_dense_scores(self, query: str, k: int) -> tuple[dict[int, float], np.ndarray]:
+        """Return dense scores as {df_row_offset: score} and raw FAISS indices."""
         query_embedding = self.dense_searcher.model.encode([query]).astype('float32')
         faiss.normalize_L2(query_embedding)
-        faiss_scores, faiss_indices = self.dense_searcher.index.search(query_embedding, initial_k)
+        faiss_scores, faiss_indices = self.dense_searcher.index.search(query_embedding, k)
         faiss_scores = faiss_scores[0]
         faiss_indices = faiss_indices[0]
-        
-        # Perform Reciprocal Rank Fusion on DataFrame index offsets
-        rrf_scores = {}
-        
-        # Add BM25 ranks
-        for rank, idx in enumerate(bm25_top_indices, start=1):
-            idx = int(idx)
-            # Filter out exact matches
-            if idx in exact_indices:
+
+        scores_map: dict[int, float] = {}
+        for score, offset in zip(faiss_scores, faiss_indices):
+            if offset == -1:
                 continue
-            if idx not in rrf_scores:
-                rrf_scores[idx] = 0.0
-            rrf_scores[idx] += 1.0 / (rrf_k + rank)
-            
-        # Add Dense ranks
+            row_idx = self.dense_searcher.id_map[int(offset)]
+            scores_map[row_idx] = float(score)
+
+        return scores_map, faiss_indices
+
+    # ------------------------------------------------------------------
+    # Fusion strategies
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _minmax(values: np.ndarray) -> np.ndarray:
+        """Scale *values* to [0, 1] via Min-Max. Returns zeros if range is 0."""
+        v_min, v_max = values.min(), values.max()
+        span = v_max - v_min
+        if span == 0:
+            return np.zeros_like(values)
+        return (values - v_min) / span
+
+    def _fuse_alpha(
+        self,
+        bm25_scores_all: np.ndarray,
+        dense_scores_map: dict[int, float],
+        exclude: set[int],
+        initial_k: int,
+        alpha: float,
+    ) -> dict[int, float]:
+        """Min-Max normalised interpolation: α·dense + (1-α)·bm25."""
+        # --- Collect the candidate pool (union of top-k from each) --------
+        bm25_top = np.argsort(bm25_scores_all)[::-1][:initial_k]
+        candidates = set(int(i) for i in bm25_top) | set(dense_scores_map.keys())
+        candidates -= exclude
+
+        if not candidates:
+            return {}
+
+        # --- Extract raw scores for the candidate pool --------------------
+        candidate_list = sorted(candidates)
+        bm25_raw = np.array([bm25_scores_all[i] for i in candidate_list], dtype=np.float64)
+        dense_raw = np.array(
+            [dense_scores_map.get(i, 0.0) for i in candidate_list], dtype=np.float64,
+        )
+
+        # --- Normalise to [0, 1] -----------------------------------------
+        bm25_norm = self._minmax(bm25_raw)
+        dense_norm = self._minmax(dense_raw)
+
+        # --- Interpolate -------------------------------------------------
+        fused_scores = alpha * dense_norm + (1.0 - alpha) * bm25_norm
+
+        return {idx: float(score) for idx, score in zip(candidate_list, fused_scores)}
+
+    def _fuse_rrf(
+        self,
+        bm25_scores_all: np.ndarray,
+        faiss_indices: np.ndarray,
+        exclude: set[int],
+        initial_k: int,
+        rrf_k: int,
+    ) -> dict[int, float]:
+        """Reciprocal Rank Fusion: Σ 1/(k + rank)."""
+        bm25_top = np.argsort(bm25_scores_all)[::-1][:initial_k]
+
+        rrf_scores: dict[int, float] = {}
+
+        # BM25 contribution
+        for rank, idx in enumerate(bm25_top, start=1):
+            idx = int(idx)
+            if idx in exclude:
+                continue
+            rrf_scores[idx] = rrf_scores.get(idx, 0.0) + 1.0 / (rrf_k + rank)
+
+        # Dense contribution
         for rank, offset in enumerate(faiss_indices, start=1):
             if offset == -1:
                 continue
             idx = self.dense_searcher.id_map[int(offset)]
-            # Filter out exact matches
-            if idx in exact_indices:
+            if idx in exclude:
                 continue
-            if idx not in rrf_scores:
-                rrf_scores[idx] = 0.0
-            rrf_scores[idx] += 1.0 / (rrf_k + rank)
-            
-        # Sort by RRF score
-        sorted_results = sorted(rrf_scores.items(), key=lambda item: item[1], reverse=True)
-        
-        # Only retrieve metadata (titles) for the final top results
-        for idx, score in sorted_results:
-            title = self.df.iloc[idx]['title']
-            results.append({
-                'title': title,
-                'score': score,
-                'rank': len(results) + 1,
-                'method': 'hybrid'
-            })
-            if len(results) >= top_k:
-                break
-                
-        return results
+            rrf_scores[idx] = rrf_scores.get(idx, 0.0) + 1.0 / (rrf_k + rank)
+
+        return rrf_scores
+
+    # ------------------------------------------------------------------
+    # Result formatting
+    # ------------------------------------------------------------------
+
+    def _make_result(self, idx: int, *, score: float, results_so_far: list) -> dict:
+        """Build a single result dict with title lookup and auto-ranking."""
+        return {
+            'title': self.df.iloc[idx]['title'],
+            'score': score,
+            'rank': len(results_so_far) + 1,
+            'method': 'hybrid',
+        }
