@@ -1,3 +1,14 @@
+---
+title: MovieSearch Semantic Engine
+emoji: 🎬
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: 1.35.0
+app_file: app.py
+pinned: false
+---
+
 # Proyecto TPI - Procesamiento de Lenguaje Natural (PLN)
 **Sistema de Recomendación y Evaluación de Búsqueda de Películas**
 
