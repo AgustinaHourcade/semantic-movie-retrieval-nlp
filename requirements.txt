@@ -10,3 +10,4 @@ streamlit
 python-dotenv
 sacremoses
 langdetect
+numpy>=2.0.0
