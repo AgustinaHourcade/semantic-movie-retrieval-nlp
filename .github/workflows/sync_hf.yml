@@ -25,4 +25,4 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: huggingface-cli upload agustinah/MovieSearch-Semantic-Engine . . --repo-type=space --commit-message="Sync from GitHub"
+        run: hf upload agustinah/MovieSearch-Semantic-Engine . . --repo-type=space --commit-message="Sync from GitHub"
