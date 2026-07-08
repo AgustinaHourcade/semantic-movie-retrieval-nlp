@@ -627,7 +627,7 @@ with st.sidebar:
             "Alpha (Dense vs BM25)",
             min_value=0.0,
             max_value=1.0,
-            value=0.5,
+            value=0.1,
             step=0.05,
             help="0.0 = puro BM25, 1.0 = puro Dense.",
         )
